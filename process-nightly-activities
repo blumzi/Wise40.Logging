@@ -1,0 +1,96 @@
+#!/bin/bash
+
+# vim: set fileformat=unix
+
+prog=$(basename ${0})
+mail_to=( "shaik@tauex.tau.ac.il" "mbowman@lco.global" "theblumz@gmail.com" )
+mail_recipients=${mail_to[@]}
+mail_recipients=${mail_recipients//[[:space:]]/ , }
+
+mail_server="mxout.tau.ac.il"
+mail_from="Wise40@tau.ac.il"
+nomail=false
+
+log_top=/cygdrive/c/Wise40/Logs
+log_date=$(date -d yesterday +"%Y-%m-%d")
+log_friendly_date=$(date -d yesterday +"%Y-%b-%d")
+
+options=$( getopt -o d:n --long date:,nomail -- "$@" )
+if [ $? -ne 0 ]; then
+    echo "Usage: ${prog} [-d|--date yyyy-mmm-dd] [-n|--nomail]"
+    exit 1
+fi
+
+eval set -- "${options}"
+while true; do
+    case "${1}" in
+    -d|--date)
+        if [[ ${2} =~ 2[[:digit:]][[:digit:]][[:digit:]]-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-[0-3][[:digit:]] ]]; then
+            log_friendly_date="${2}"
+            log_date=$( echo ${log_friendly_date} | sed \
+                -e 's;Jan;01;' \
+                -e 's;Feb;02;' \
+                -e 's;Mar;03;' \
+                -e 's;Apr;04;' \
+                -e 's;May;05;' \
+                -e 's;Jun;06;' \
+                -e 's;Jul;07;' \
+                -e 's;Aug;08;' \
+                -e 's;Sep;09;' \
+                -e 's;Oct;10;' \
+                -e 's;Now;11;' \
+                -e 's;Dec;12;' )
+                shift 2
+        else
+            echo "${prog}: bad date ${2}"
+            exit
+        fi
+
+        shift 2
+        break
+        ;;
+
+    -n|--nomail)
+        nomail=true
+        shift
+        break
+        ;;
+
+    --)
+        shift
+        break
+        ;;
+    esac
+done
+log_dir="${log_top}/${log_date}"
+
+export PATH="${PATH}:${log_top}"
+
+if [ ! -d "${log_dir}" ]; then
+    echo "${prog}: No such directory ${log_dir}"
+    exit
+fi
+
+cd ${log_dir}
+activities_base=activities-${log_friendly_date}
+activities_txt=${activities_base}.txt
+activities_archive=${activities_base}.zip
+
+ascom_log="ASCOM.RemoteServer.txt"
+
+if [ ! -e ${activities_archive} ]; then
+    if [ ! -r ${ascom_log} ]; then
+        exit
+    fi
+
+    extract-activities < ${ascom_log} > ${activities_txt}
+    zip -q -l -9 ${activities_archive} ${activities_txt}
+fi
+
+if ${nomail}; then
+    exit
+fi
+
+mail_subject="Wise40 activities for ${log_friendly_date}"
+
+powershell -Command "& { Send-MailMessage -To ${mail_recipients} -From \"${mail_from}\" -Subject \"${mail_subject}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\${activities_archive}\" }"

@@ -1,0 +1,325 @@
+#!/bin/gawk -f
+
+function format_start_suspect(reason) {
+    print "## Start suspect (" reason ")"
+}
+
+function format_end_suspect() {
+    print "## End suspect"
+}
+
+# 15:48:19.359 
+function timestamp2millis(t, w) {
+    split(t, w, /[:\.]/)
+    return (((w[1] * 3600 * 1000)) + ((w[2] * 60) * 1000) + (w[3] * 1000) + w[4]) + 0.0
+}
+
+function time_interval(t, ret, h, m, s, ms) {
+    ret = ""
+    ms = t % 1000
+    t = (t - ms) / 1000
+    s = t % 60
+    t = (t - s) / 60
+    m = t % 60
+    t = (t - m) / 60
+    h = t % 60
+
+    if (h != 0)
+        return sprintf("%d:%02d:%02d.%03d", h, m, s, ms)
+    if (m != 0)
+        return sprintf("%d:%02d.%03d", m, s, ms)
+    if (s != 0)
+        return sprintf("%d.%03d", s, ms)
+    return sprintf("%dms", ms)
+}
+
+function print_in_progress(s, line, a, active) {
+    line = substr(s, 1, 52)
+    active = 0
+    for (a = 0; a < length(actions); a++) {
+        if (in_progress(actions[a]))
+            active = 1
+        if (active && in_progress(actions[a]))
+            line = line "|  "
+    }
+    line = line substr(s, 53)
+    print line
+}
+
+function print_start_progress(action, s, a, line, active) {
+    active = 0
+    in_progress_dict[action] = 1
+    line = substr(s, 1, 52)
+    for (a = 0; a < length(actions); a++) {
+        if (in_progress(actions[a]) && !active) {
+            #print "print_start_progress: first active: " actions[a]
+            active = 1
+        }
+        if (active == 1 && in_progress(actions[a])) {
+            #print "print_start_progress: checking for action: " action ": actions[" a "]: "  actions[a]
+            if (actions[a] == action)
+                line = line "+- "
+            else
+                line = line "|  "
+        }
+    }
+    line = line substr(s, 53)
+    print line
+}
+
+function print_end_progress(action, s, a, line, active) {
+    line = substr(s, 1, 52)
+    active = 0
+    for (a = 0; a < length(actions); a++) {
+        if (in_progress(actions[a]))
+            active = 1
+        if (active && in_progress(actions[a])) {
+            if (actions[a] == action)
+                line = line "+- "
+            else
+                line = line "|  "
+        }
+    }
+    line = line substr(s, 53)
+    in_progress_dict[action] = 0
+    print line
+}
+
+function in_progress(action) {
+    # print ">>> in_progress(" action ") => " in_progress_dict[action]
+    return in_progress_dict[action]
+}
+
+BEGIN {
+    slew_number = 0
+    unsafe_reasons[""] = ""
+    rate = ""
+    prev_slewing_reason = ""
+    delete in_progress_dict
+    actions[0] = "shutdown"
+    actions[1] = "shutter"
+    actions[2] = "parking"
+    actions[3] = "slewing"
+
+    for (i = 0; i < length(actions) ; i++) {
+        # print "action[" i "]:  " actions[i]
+        in_progress_dict[actions[i]] = 0
+    }
+    # print "length(actions): " length(actions)
+}
+
+{
+    sub("\r", "")
+}
+
+/^##/ {
+    print
+    next
+}
+
+/======/ {
+    print "\n" $0 "\n"
+    next
+}
+
+/Waiting for dome to arrive to/ { next }
+/doShutdown: waiting/ { next }
+
+/DebugASCOM[[:space:]]*SlewToTargetAsync/ {
+    slew_number++
+    slew_start = timestamp2millis($1)
+    print "\n"
+    print "##############"
+    print "# Slew " slew_number
+    print "##############"
+    print
+    next
+}
+
+/Tracking Set/ { print_in_progress($0); next }
+/DomeSlaveDriver:SlewToAz/ { print_in_progress($0); next }
+/Slewer Done at/ { print_in_progress($0); next }
+/DebugFocuser     Move.*from:/ {
+    print_in_progress($0)
+    next
+}
+
+/DebugDome.*Too short:/ {
+    print_in_progress($0)
+    next
+}
+
+/started.*the shutter/ {
+    print_start_progress("shutter", $0)
+    shutter_range_index = 1
+    next
+}
+
+/DebugShutter     Stop: stopped/ {
+    print_end_progress("shutter", $0)
+    delete shutter_ranges
+    next
+}
+
+in_progress("shutter") && /ShutterRange: returning:/ {
+    range = $NF
+    if (range in shutter_ranges) {
+        ;
+    } else {
+        shutter_ranges[range] = 1
+        print_in_progress($0)
+    }
+    next
+}
+
+
+/axis.*has stopped moving/ {
+    print_in_progress($0)
+    next
+}
+
+# 13:38:46.499 UT 15456,30,125       DebugLogic       _doSlewToCoordinatesAsync: Slewer "Ra" completed with status: RanToCompletion
+/Slewer.*completed with status/ {
+    slewer = match($7, ".Ra.") ? "axisPrimarySlewer" : "axisSecondarySlewer"
+    sub("_doSlewToCoordinatesAsync:.*completed", slewer ": completed")
+    print_in_progress($0)
+    next
+}
+
+/DebugASCOM.*AbortSlew/ {
+    print_in_progress($0)
+    next
+}
+
+/[Aa]borted/ {
+    print_in_progress($0)
+    next
+}
+
+/doShutdown:/ {
+    sub("doShutdown", "Shutdown")
+    if ($6 == "starting" && $7 == "activity")
+        print_start_progress("shutdown", $0)
+    else if ($6 == "ending")
+        print_end_progress("shutdown", $0)
+    else
+        print_in_progress($0)
+    next
+}
+
+/Slew cancelled/ {
+    print_in_progress($0)
+    next
+}
+
+/closeEnoughRates:/ {
+    print_in_progress($0)
+    next
+}
+
+# 15:48:24.352 UT 19352,18,-1        DebugSafety      UnsafeReasons: Sun - The Sun elevation (5.4 deg) is higher than 5.0 deg;Wind - not ready (only 0 of 3 readings);Clouds - not ready (only 0 of 3 readings);Rain - not ready (only 0 of 2 readings);Humidity - not ready (only 0 of 4 readings)
+/UnsafeReasons/ {
+    if (changed_to_unsafe && !showed_reasons && NF > 5) {
+        pre = substr($0, 1, 67)
+        nreasons = split(substr($0, 68), current_reasons, ";")
+        same = unsafe_nreasons == nreasons
+        if (same) {
+            for (i = 1; i <= nreasons; i++)
+                if (unsafe_reasons[i] != current_reasons[i]) {
+                    same = 0
+                    break
+                }
+        }
+
+        if (! same) {
+            delete unsafe_reasons
+            i = 0
+            for (i = 1; i <= nreasons; i++) {
+                unsafe_reasons[i] = current_reasons[i]
+                print_in_progress(pre unsafe_reasons[i])
+            }
+        }
+        showed_reasons = 1
+    }
+    next
+}
+
+/DebugSafety.*changed from/ {
+    changed_to_unsafe = ($NF == "Unsafe")
+
+    print_in_progress($0)
+    next
+}
+
+/all slewers done/ {
+    print_in_progress($0 " duration: " time_interval(timestamp2millis($1) - slew_start))
+    next
+}
+
+# 15:03:18.878 UT 16244,26,63        DebugLogic       (64277042) mp[axisPrimary, rateGuide, EastMotor,Tracking].velocity: 0.0000000452 rad/ms, millis: 63723866598878, dx: 0.0000045211, dt: 100.0000000000, True
+/mp\[axis/ {
+    sub(",", "", $7)
+    rate = $7
+    sub("mp.axis", "axis", $6)
+    sub(",", "", $6)
+    axis = $6
+    next
+}
+
+# 15:08:35.981 UT 5084,18,158        DebugLogic       mp[EastMotor,Tracking].lowestRad: 0.0000020592, highestRad: 0.0000791239, rate: rateGuide
+#/mp\[.*lowestRad/ {
+#    r = rate
+#    lowest = sprintf("%.8f", $6)
+#    highest = sprintf("%.8f", $8)
+#    if (match($0, /Tracking/))
+#        r = r "+Tracking"
+#    sub(/mp\[.*/, "")
+#    print_in_progress($0 "mp[" axis ", " r "]: lowestRad: " lowest " highestRad: " highest)
+#    next
+#}
+
+/Slewing Get -/ {
+    was_slewing = in_progress("slewing")
+    slewing_now = ($8 == "True") ? 1 : 0;
+    if (slewing_now) {
+        match($0, /[(][^)]*[)]/)
+        slewing_reason = substr($0, RSTART + 1, RLENGTH - 2)
+        if (slewing_reason != prev_slewing_reason) {
+            prev_slewing_reason = slewing_reason
+        }
+    }
+    sub(/Get.*/, "")
+    if (slewing_now != was_slewing) {
+        if (was_slewing && !slewing_now) {
+            print_end_progress("slewing", $0 "DONE. duration: " time_interval(timestamp2millis($1) - slewing_start))
+        } else if (!was_slewing && slewing_now) {
+            print_start_progress("slewing", $0 "STARTED - " slewing_reason)
+        }
+
+        if (slewing_now && !was_slewing)
+            slewing_start = timestamp2millis($1)
+    }
+    next
+}
+
+/DebugLogic[[:space:]]*Throw:/ {
+    sub("Throw", "Cancellation")
+    print_in_progress($0)
+    next
+}
+
+/PulseGuide: Direction=/ {
+    print_in_progress($0)
+    next
+}
+
+
+#egrep '(axis.*has stopped moving|Slewer.*completed with status|========|AbortSlew|Slew cancelled|closeEnoughRates:|doShutdown:|[Aa]borted|SlewToTargetAsync|Tracking Set|DomeSlaveDriver:SlewToAz|Slewer Done at|started.*the shutter|DebugShutter     Stop: stopped| PulseGuide: Direction|DebugFocuser.*(Move:|stopped.*state: None))' | egrep -v '(Waiting for dome to arrive to|doShutdown: waiting)' | sed 
+#    -e 's;^\(.*SlewToTargetAsync.*\)$;\n\1;' 
+#    -e 's;^\(.*started.*the shutter.*\)$;\n\1\n;' 
+#    -e 's;DebugFocuser     Move: at \([0-9]*\).*targetPos: \([0-9]*\);DebugFocuser     Move: from \1 to \2;' 
+#    -e 's;DebugFocuser     onTimer: stopped moving: at \([0-9]*\).*;DebugFocuser     Stopped at \1;' 
+#    -e 's;^\(.*doShutdown: starting activity ShuttingDown.*\)$;\n\1;' 
+#    -e 's;^\(.*DebugShutter     Stop: \)stopped\(.*\);\n\1done\2\n;' 
+#    -e 's;^\(=====.*\)$;\n\1\n;'
+

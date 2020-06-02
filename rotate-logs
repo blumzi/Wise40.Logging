@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# vim: set fileformat=unix #
+
+prog="$(basename ${0})"
+logfile=/cygdrive/c/Wise40/Logs/log.txt
+
+function log() {
+    echo -e "$(date --rfc-3339=seconds) $*\r" >> ${logfile}
+}
+
+tops=(
+    /cygdrive/c/Wise40/Logs
+    /cygdrive/c/Users/${USER}/Documents/ASCOM
+    /cygdrive/c/ASCOM
+    /cygdrive/c/Wise40/MySQL
+)
+
+log ""
+log "=== Started ==="
+while read dir; do
+    log "    Removing \"${dir}\" ..."
+    /bin/rm -rf "${dir}"
+done < <( find "${tops[@]}" -maxdepth 1 -type d -name '*2???-??-??' -mtime +30 ) 
+log "=== Done ==="
