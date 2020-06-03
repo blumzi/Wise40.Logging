@@ -96,8 +96,10 @@ mail_subject="Wise40 activities for ${log_friendly_date}"
 
 powershell -Command "& { Send-MailMessage -To ${mail_recipients} -From \"${mail_from}\" -Subject \"${mail_subject}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\${activities_archive}\" }"
 
-grep SUSPECT: ${ascom_log} > suspects.txt
-if [ -s suspects.txt ]; then
-    zip -q -l -9 suspects.zip suspects.txt
-    powershell -Command "& { Send-MailMessage -To ${developer} -From \"${mail_from}\" -Subject \"Wise40 suspects for ${log_friendly_date}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\suspects.zip\" }"
+suspects_txt=suspects.txt
+suspects_archive=suspects.zip
+grep SUSPECT: ${ascom_log} > ${suspects_txt}
+if [ -s ${suspects_txt} ]; then
+    zip -q -l -9 ${suspects_archive} ${suspects_txt}
+    powershell -Command "& { Send-MailMessage -To ${developer} -From \"${mail_from}\" -Subject \"Wise40 suspects for ${log_friendly_date}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\${suspects_archive}\" }"
 fi
