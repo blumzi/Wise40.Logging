@@ -6,6 +6,7 @@ prog=$(basename ${0})
 mail_to=( "shaik@tauex.tau.ac.il" "mbowman@lco.global" "theblumz@gmail.com" )
 mail_recipients=${mail_to[@]}
 mail_recipients=${mail_recipients//[[:space:]]/ , }
+developer="theblumz@gmail.com"
 
 mail_server="mxout.tau.ac.il"
 mail_from="Wise40@tau.ac.il"
@@ -94,3 +95,9 @@ fi
 mail_subject="Wise40 activities for ${log_friendly_date}"
 
 powershell -Command "& { Send-MailMessage -To ${mail_recipients} -From \"${mail_from}\" -Subject \"${mail_subject}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\${activities_archive}\" }"
+
+grep SUSPECT: ${ascom_log} > suspects.txt
+if [ -s suspects.txt ]; then
+    zip -q -l -9 suspects.zip suspects.txt
+    powershell -Command "& { Send-MailMessage -To ${developer} -From \"${mail_from}\" -Subject \"Wise40 suspects for ${log_friendly_date}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\suspects.zip\" }"
+fi
