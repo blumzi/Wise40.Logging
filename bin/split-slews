@@ -1,0 +1,27 @@
+#!/bin/awk -f
+
+# vim:set filetype=awk
+
+function mkfilename(t) {
+    return "slews/slew-" sprintf("%03d", slewno) "-" t
+}
+
+BEGIN {
+    slewno = 0
+    fname = ""
+    system("mkdir -p slews")
+}
+
+fname == "" && / UT .*Debug/{
+    fname = mkfilename($1)
+    next
+}
+
+/DebugASCOM       SlewToTargetAsync/ {
+    slewno++
+    fname = mkfilename($1)
+}
+
+{
+    if (fname != "") print > fname
+}

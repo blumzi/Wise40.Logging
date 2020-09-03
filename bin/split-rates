@@ -1,0 +1,85 @@
+#!/bin/bash
+
+prog=$(basename $0)
+
+if [[ $(pwd) != */slews ]]; then
+    echo "${prog}: Must be run in a \"slews\" directory"
+    exit 1
+fi
+
+if [[ "${1}" != slew-* ]]; then
+    echo "${prog}: Argv[1] must be slew-*"
+    exit 1
+fi
+
+inp="${1}"
+rates_dir=rates/${inp//:/-}
+mkdir -p ${rates_dir}
+
+date=$(basename $(dirname $(pwd)))
+
+egrep 'axis(Primary|Secondary)Slewer.*sleeping' ${inp} | awk -v date="${date}" -v rates_dir="${rates_dir}" '
+    function timestamp2millis(t, w) {
+        split(t, w, /[:\.]/)
+        return (((w[1] * 3600 * 1000)) + ((w[2] * 60) * 1000) + (w[3] * 1000) + w[4]) + 0.0
+    }
+
+    BEGIN {
+        slew_number = rates_dir
+        sub("[^-]*-", "", slew_number)
+        sub("-.*", "", slew_number)
+    }
+
+    {
+        slewer = $5 == "axisPrimarySlewer" ? "ra" : "dec"
+        match($7, "Guide|Set|Slew")
+        rate = tolower(substr($7, RSTART, RLENGTH))
+        fname = rates_dir "/" slewer "-" rate
+        gsub(":", "-", fname)
+
+        sub(",", "", $16)
+        if (dict[slewer,rate,"first","time"] == 0) {
+            dict[slewer,rate,"first","time"] = timestamp2millis($1)
+            dict[slewer,rate,"last","rads"] = $16
+
+        } else if ($16 != dict[slewer,rate,"last","rads"]) {
+            print timestamp2millis($1) - dict[slewer,rate,"first","time"], $16 > fname
+            dict[slewer,rate,"last","rads"] = $16
+            dict[slewer,rate,"fname"] = fname
+        }
+    }
+
+    END {
+        nfiles = 0
+        if (dict["ra","slew","fname"] != "")
+            files[nfiles++] = dict["ra","slew","fname"]
+        if (dict["ra","set","fname"] != "")
+            files[nfiles++] = dict["ra","set","fname"]
+        if (dict["ra","guide","fname"] != "")
+            files[nfiles++] = dict["ra","guide","fname"]
+
+        if (dict["dec","slew","fname"] != "")
+            files[nfiles++] = dict["dec","slew","fname"]
+        if (dict["dec","set","fname"] != "")
+            files[nfiles++] = dict["dec","set","fname"]
+        if (dict["dec","guide","fname"] != "")
+            files[nfiles++] = dict["dec","guide","fname"]
+
+        if (nfiles == 0)
+            exit 0
+
+        gnuplot_code = "set terminal wxt " slew_number " title \"" date ", slew #" slew_number "\"; set logscale y; set xlabel \"Millis\"; set ylabel \"Distance to target (radians)\"; plot "
+        for (i = 0; i < nfiles; i++) {
+            legend = files[i]
+            sub(".*/", "", legend)
+            gnuplot_code = gnuplot_code "\"../slews/" files[i] "\" title \"" legend "\" with lines,"
+        }
+        sub(",$", "", gnuplot_code)
+
+        plotdir =  rates_dir "/../../../plots"
+        system("mkdir -p " plotdir)
+
+        print gnuplot_code >> plotdir "/all-slews.plt"
+        print gnuplot_code  > plotdir "/slew-" slew_number ".plt"
+    }
+'
