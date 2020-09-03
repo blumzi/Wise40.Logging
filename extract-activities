@@ -86,13 +86,18 @@ function print_end_progress(action, s, a, line, active) {
 }
 
 function in_progress(action) {
-    # print ">>> in_progress(" action ") => " in_progress_dict[action]
     return in_progress_dict[action]
 }
 
+function clear_progress() {
+    for (a = 0; a < length(actions); a++) 
+        in_progress_dict[actions[a]] = 0
+}
+    
+
 BEGIN {
     slew_number = 0
-    unsafe_reasons[""] = ""
+    #unsafe_reasons = ""
     rate = ""
     prev_slewing_reason = ""
     delete in_progress_dict
@@ -105,7 +110,8 @@ BEGIN {
         # print "action[" i "]:  " actions[i]
         in_progress_dict[actions[i]] = 0
     }
-    # print "length(actions): " length(actions)
+    changed_to_unsafe = 0
+    showed_reasons = 0
 }
 
 {
@@ -119,11 +125,11 @@ BEGIN {
 
 /======/ {
     print "\n" $0 "\n"
+    clear_progress()
     next
 }
 
 /Waiting for dome to arrive to/ { next }
-/doShutdown: waiting/ { next }
 
 /DebugASCOM[[:space:]]*SlewToTargetAsync/ {
     slew_number++
@@ -181,7 +187,7 @@ in_progress("shutter") && /ShutterRange: returning:/ {
 # 13:38:46.499 UT 15456,30,125       DebugLogic       _doSlewToCoordinatesAsync: Slewer "Ra" completed with status: RanToCompletion
 /Slewer.*completed with status/ {
     slewer = match($7, ".Ra.") ? "axisPrimarySlewer" : "axisSecondarySlewer"
-    sub("_doSlewToCoordinatesAsync:.*completed", slewer ": completed")
+    sub("DoSlewToCoordinatesAsync:.*completed", slewer ": completed")
     print_in_progress($0)
     next
 }
@@ -196,14 +202,27 @@ in_progress("shutter") && /ShutterRange: returning:/ {
     next
 }
 
-/doShutdown:/ {
-    sub("doShutdown", "Shutdown")
-    if ($6 == "starting" && $7 == "activity")
+/DoShutdown\(/ {
+    if (match($0, "waiting"))
+        next
+
+    gsub("DoShutdown", "Shutdown")
+    if (match($0, "starting activity"))
         print_start_progress("shutdown", $0)
-    else if ($6 == "ending")
+    else if (match($0, "ending activity"))
         print_end_progress("shutdown", $0)
     else
         print_in_progress($0)
+    next
+}
+
+/Park: started/ {
+    print_start_progress("parking", $0)
+    next
+}
+
+/Park: all done/ {
+    print_end_progress("parking", $0)
     next
 }
 
@@ -218,13 +237,21 @@ in_progress("shutter") && /ShutterRange: returning:/ {
 }
 
 # 15:48:24.352 UT 19352,18,-1        DebugSafety      UnsafeReasons: Sun - The Sun elevation (5.4 deg) is higher than 5.0 deg;Wind - not ready (only 0 of 3 readings);Clouds - not ready (only 0 of 3 readings);Rain - not ready (only 0 of 2 readings);Humidity - not ready (only 0 of 4 readings)
-/UnsafeReasons/ {
+/UnsafeReasons:/ {
     if (changed_to_unsafe && !showed_reasons && NF > 5) {
         pre = substr($0, 1, 67)
-        nreasons = split(substr($0, 68), current_reasons, ";")
-        same = unsafe_nreasons == nreasons
+        sub("Unsafe", "  Unsafe", pre)
+        n = split(substr($0, 68), arr, ";")
+        for (i = 1; i < n; i++)
+            current_reasons[i-1] = arr[i]
+        nreasons = length(current_reasons)
+        if (! 0 in unsafe_reasons)
+            unsafe_nreasons = 0
+        same = (unsafe_nreasons == nreasons)
+
         if (same) {
-            for (i = 1; i <= nreasons; i++)
+            # same number, check if same elements
+            for (i = 0; i < nreasons; i++)
                 if (unsafe_reasons[i] != current_reasons[i]) {
                     same = 0
                     break
@@ -234,18 +261,20 @@ in_progress("shutter") && /ShutterRange: returning:/ {
         if (! same) {
             delete unsafe_reasons
             i = 0
-            for (i = 1; i <= nreasons; i++) {
+            for (i = 0; i < nreasons; i++) {
                 unsafe_reasons[i] = current_reasons[i]
                 print_in_progress(pre unsafe_reasons[i])
             }
         }
-        showed_reasons = 1
+        showed_reasons = 0
+        changed_to_unsafe = 0
     }
     next
 }
 
 /DebugSafety.*changed from/ {
     changed_to_unsafe = ($NF == "Unsafe")
+    #print ">>> ==" $0 "==, changed_to_unsafe: " changed_to_unsafe
 
     print_in_progress($0)
     next
@@ -313,6 +342,57 @@ in_progress("shutter") && /ShutterRange: returning:/ {
     next
 }
 
+# 17:10:02.343 UT 21100,17,2633      DebugDome        WiseDome: SlewToAzimuth(23.3°, reason: Follow telescope to new target) => at: 90.5°, dist: 67.2°), moving Decreasing
+/WiseDome: SlewToAzimuth\(/ {
+    target = $6
+    sub(/.*\(/, "", target)
+    sub(/,.*/, "", target)
+
+    for (i = 1 ; i <= NF; i++) {
+        if ($i == "reason:") {
+            reason = ""
+            for (j = i + 1; j <= NF && ! match($j, ".*)"); j++)
+                reason = reason $j " "
+            sub(")", "", $j)
+            reason = reason $j
+            break
+        }
+        sub(")", "", reason)
+    }
+    
+    dome_slew[target,"start"] = $1
+    dome_slew[target,"reason"] = reason
+    next
+}
+    
+# 17:10:34.414 UT 21100,23,-1        DebugDome        WiseDome:Stop(Reached target) Fully stopped at az: 22.6°, target: 23.3° encoder: 408,  after 2 tries
+/WiseDome:Stop.*Fully stopped/ {
+    for (i = 1; i <= NF; i++)
+        if ($i == "target:") {
+            target = $(i+1)
+            break
+        }
+    dome_slew[target,"end"] = $1
+    dome_slew[target,"millis"] = timestamp2millis(dome_slew[target,"end"]) - timestamp2millis(dome_slew[target,"start"])
+
+    too_long_minutes = 5
+    too_long_millis = too_long_minutes * 60 * 1000
+
+    file = "dome_issues.txt"
+    message = "start: " dome_slew[target,"start"] " UT, end: " dome_slew[target,"end"] " UT, duration: " (dome_slew[target,"millis"] / 1000) " seconds, reason: " dome_slew[target,"reason"]
+    if (dome_slew[target,"millis"] > too_long_millis) {
+        print message ", Too long!" >> file
+        fflush(file)
+    } else if (match($0, "AbortSlew")) {
+        print message ", Aborted by AbortSlew!" >> file
+        fflush(file)
+    }
+}
+
+/Backoff/ {
+    print_in_progress($0)
+    next
+}
 
 #egrep '(axis.*has stopped moving|Slewer.*completed with status|========|AbortSlew|Slew cancelled|closeEnoughRates:|doShutdown:|[Aa]borted|SlewToTargetAsync|Tracking Set|DomeSlaveDriver:SlewToAz|Slewer Done at|started.*the shutter|DebugShutter     Stop: stopped| PulseGuide: Direction|DebugFocuser.*(Move:|stopped.*state: None))' | egrep -v '(Waiting for dome to arrive to|doShutdown: waiting)' | sed 
 #    -e 's;^\(.*SlewToTargetAsync.*\)$;\n\1;' 
