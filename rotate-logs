@@ -18,8 +18,15 @@ tops=(
 
 log ""
 log "=== Started ==="
+log "== Removing log directories =="
 while read dir; do
     log "    Removing \"${dir}\" ..."
     /bin/rm -rf "${dir}"
 done < <( find "${tops[@]}" -maxdepth 1 -type d -name '*2???-??-??' -mtime +30 ) 
+
+log "== Removing dump files =="
+while read dmp; do
+    log "    Removing \"${dmp}\" ..."
+    /bin/rm -f "${dmp}"
+done < <( find /cygdrive/c/Users/mizpe/AppData/Local/CrashDumps -maxdepth 1 -type f -name '*.dmp' -mtime +30 ) 
 log "=== Done ==="
