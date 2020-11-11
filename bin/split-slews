@@ -17,7 +17,7 @@ fname == "" && / UT .*Debug/{
     next
 }
 
-/DebugASCOM       SlewToTargetAsync/ {
+/DebugASCOM[[:space:]]*SlewTo(Target)Async/ {
     slewno++
     fname = mkfilename($1)
 }

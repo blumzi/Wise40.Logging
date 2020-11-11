@@ -31,20 +31,24 @@ egrep 'axis(Primary|Secondary)Slewer.*sleeping' ${inp} | awk -v date="${date}" -
     }
 
     {
-        slewer = $5 == "axisPrimarySlewer" ? "ra" : "dec"
-        match($7, "Guide|Set|Slew")
-        rate = tolower(substr($7, RSTART, RLENGTH))
+        slewer = $11
+        rate = $13
+        radians = $22
+
+        slewer = (slewer == "axisPrimarySlewer") ? "ra" : "dec"
+        match(rate, "Guide|Set|Slew")
+        rate = tolower(substr(rate, RSTART, RLENGTH))
         fname = rates_dir "/" slewer "-" rate
         gsub(":", "-", fname)
 
-        sub(",", "", $16)
+        sub(",", "", radians)
         if (dict[slewer,rate,"first","time"] == 0) {
             dict[slewer,rate,"first","time"] = timestamp2millis($1)
-            dict[slewer,rate,"last","rads"] = $16
+            dict[slewer,rate,"last","radians"] = radians
 
-        } else if ($16 != dict[slewer,rate,"last","rads"]) {
-            print timestamp2millis($1) - dict[slewer,rate,"first","time"], $16 > fname
-            dict[slewer,rate,"last","rads"] = $16
+        } else if (radians != dict[slewer,rate,"last","radians"]) {
+            print timestamp2millis($1) - dict[slewer,rate,"first","time"], radians > fname
+            dict[slewer,rate,"last","radians"] = radians
             dict[slewer,rate,"fname"] = fname
         }
     }

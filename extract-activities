@@ -207,11 +207,13 @@ in_progress("shutter") && /ShutterRange: returning:/ {
         next
 
     gsub("DoShutdown", "Shutdown")
-    if (match($0, "starting activity"))
+    if (match($0, "starting activity")) {
+        print ""
         print_start_progress("shutdown", $0)
-    else if (match($0, "ending activity"))
+    } else if (match($0, "ending activity")) {
         print_end_progress("shutdown", $0)
-    else
+        print ""
+    } else
         print_in_progress($0)
     next
 }
@@ -392,6 +394,16 @@ in_progress("shutter") && /ShutterRange: returning:/ {
 /Backoff/ {
     print_in_progress($0)
     next
+}
+
+/DebugSafety.*(Started|Ended) bypass/ {
+    reason =  match($0, "temporary") ? "(internal) for Shutdown" : "by Operator\n"
+    action = match($0, "Started") ? "Started" : "Ended"
+    line = "Safety bypass: " action " " reason
+
+    print ""
+    sub("DebugSafety.*", "DebugSafety      " line, $0) 
+    print_in_progress($0)
 }
 
 #egrep '(axis.*has stopped moving|Slewer.*completed with status|========|AbortSlew|Slew cancelled|closeEnoughRates:|doShutdown:|[Aa]borted|SlewToTargetAsync|Tracking Set|DomeSlaveDriver:SlewToAz|Slewer Done at|started.*the shutter|DebugShutter     Stop: stopped| PulseGuide: Direction|DebugFocuser.*(Move:|stopped.*state: None))' | egrep -v '(Waiting for dome to arrive to|doShutdown: waiting)' | sed 
