@@ -131,7 +131,7 @@ BEGIN {
 
 /Waiting for dome to arrive to/ { next }
 
-/DebugASCOM[[:space:]]*SlewToTargetAsync/ {
+/DebugASCOM[[:space:]]*SlewTo(Target|Coordinates|AltAz|HaDec)Async/ {
     slew_number++
     slew_start = timestamp2millis($1)
     print "\n"
