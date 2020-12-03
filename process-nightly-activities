@@ -96,7 +96,7 @@ if [ ! -e ${activities_archive} ]; then
     zip -q -l -9 ${activities_archive} ${activities_txt}
 fi
 
-export PATH="/home/mizpe/bin:${PATH}"
+export PATH="/cygdrive/c/Wise40/Logs/bin:${PATH}"
 split-slews < ASCOM.RemoteServer.txt
 
 cd slews
