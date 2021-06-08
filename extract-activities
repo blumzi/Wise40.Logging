@@ -131,6 +131,10 @@ BEGIN {
 
 /Waiting for dome to arrive to/ { next }
 
+/DebugASCOM[[:space:]]*Unpark/ {
+    print_in_progress($0); next
+}
+
 /Debug(ASCOM|Logic)[[:space:]]*SlewTo(Target|Coordinates|AltAz|HaDec)Async/ {
     slew_number++
     slew_start = timestamp2millis($1)
