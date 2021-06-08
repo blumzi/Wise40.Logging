@@ -14,6 +14,7 @@ tops=(
     /cygdrive/c/Users/${USER}/Documents/ASCOM
     /cygdrive/c/ASCOM
     /cygdrive/c/Wise40/MySQL
+    '/cygdrive/c/Program Files (x86)/Common Files/ASCOM/SystemLogs'
 )
 
 log ""
