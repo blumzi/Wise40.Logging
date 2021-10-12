@@ -30,6 +30,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+function log() {
+    logger -t "${prog}" "${*}"
+}
+
 eval set -- "${options}"
 while true; do
     case "${1}" in
@@ -87,16 +91,27 @@ activities_archive=${activities_base}.zip
 
 ascom_log="ASCOM.RemoteServer.txt"
 
+log "Running in ${log_dir}"
 if [ ! -e ${activities_archive} ]; then
     if [ ! -r ${ascom_log} ]; then
+        log "Missing ${ascom_log}, exiting"
         exit
     fi
 
+    log "Extracting activities - started"
     extract-activities < ${ascom_log} > ${activities_txt}
     zip -q -l -9 ${activities_archive} ${activities_txt}
+    log "Extracting activities - done"
 fi
 
-export PATH="/cygdrive/c/Wise40/Logs/bin:${PATH}"
+watcher_logs=( $(echo  Wise40Watcher.*.txt) )
+if [ ${#watcher_logs[*]} -gt 0 ]; then
+    grep "Reconnected WiFi network" ${watcher_logs[*]} | sed 's; with.*;;' > wifi_issues.txt
+    test -s wifi_issues.txt || /bin/rm wifi_issues.txt
+fi
+
+export PATH="${log_top}/bin:${PATH}"
+log "Splitting slews - started"
 split-slews < ASCOM.RemoteServer.txt
 
 cd slews
@@ -104,6 +119,7 @@ for i in slew-0*; do
     split-rates $i
 done
 cd ..
+log "Splitting slews - done"
 
 suspects_txt=suspects.txt
 suspects_archive=suspects.zip
@@ -118,6 +134,7 @@ fi
 
 mail_subject="Wise40 activities for ${log_friendly_date}"
 
+log "Mailing results - started"
 powershell -Command "& { Send-MailMessage -To ${mail_recipients} -From \"${mail_from}\" -Subject \"${mail_subject}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\${activities_archive}\" }"
 
 if [ -s ${suspects_txt} ]; then
@@ -130,4 +147,5 @@ for issue_file in *_issues.txt; do
     subject="Wise40 ${issue_type} issues for ${log_friendly_date}"
     powershell -Command "& { Send-MailMessage -To ${tau_recipients} -From \"${mail_from}\" -Subject \"${subject}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\${issue_file}\" }"
 done
-
+log "Mailing results - done"
+log "Done."

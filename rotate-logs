@@ -6,7 +6,8 @@ prog="$(basename ${0})"
 logfile=/cygdrive/c/Wise40/Logs/log.txt
 
 function log() {
-    echo -e "$(date --rfc-3339=seconds) $*\r" >> ${logfile}
+    logger -t "${prog}" "${*}"
+    #echo -e "$(date --rfc-3339=seconds) $*\r" >> ${logfile}
 }
 
 tops=(
@@ -14,6 +15,7 @@ tops=(
     /cygdrive/c/Users/${USER}/Documents/ASCOM
     /cygdrive/c/ASCOM
     /cygdrive/c/Wise40/MySQL
+    '/cygdrive/c/Program Files (x86)/CommonFiles/ASCOM/SystemLogs'
 )
 
 log ""
