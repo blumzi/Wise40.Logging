@@ -17,7 +17,7 @@ fname == "" && / UT .*Debug/{
     next
 }
 
-/Debug(ASCOM|Logic)[[:space:]]*SlewTo(Target|Coordinates|HaDec|AltAz)Async/ {
+/Debug(ASCOM|Logic|Tele)[[:space:]]*SlewTo(Target|Coordinates|HaDec|AltAz)Async/ {
     slewno++
     fname = mkfilename($1)
 }
