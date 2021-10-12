@@ -1,0 +1,95 @@
+#!/bin/awk -f
+
+function file_exists(f,  cmd) {
+    cmd = "test -e " f
+    cmd | getline
+    return ! close(cmd)
+}
+
+function sexagesimal_to_decimal(s, a, ss, mm, hh) {
+    n = split(s, a, /[:]/)
+
+    #print s, n, a[1] + 0, a[2], a[3], a[4]
+    hh = (a[1] + 0)
+    mm = (a[2] + 0)
+    ss = (a[3] + 0) 
+    return hh + mm / 60 + ss / 3600
+}
+
+#DATE-OBS= '2021-02-10T02:08:29.184' / [UTC] Start date and time of the observati
+#LST     = '13:49:01.07'        / [HH:MM:SS.ss] LST at start of current observati
+#RASOLVE = '12:57:53.160'       / Solved RA
+#DECSOLVE= '+23:41:47.67'       / Solved Dec
+
+function time_to_millis(t) {
+    split(t, a, "[:.]")
+    #print "time_to_millis: t: " t ", a[1]: " a[1] ", a[2]: " a[2] ", a[3]: " a[3] ", a[4]: " a[4]
+    return a[1] * (3600 * 1000) + a[2] * (60 * 1000) + a[3] * 1000 + (a[4] + 0)
+}
+
+{
+    gsub(/[[:blank:]]*=[[:blank:]]*'/, " ")
+    gsub(/'.*/, "")
+    split($0, a)
+    head[a[1]] = a[2]
+    #print "head[" a[1] "] = " a[2]
+}
+
+function abs(a) {
+    return (a + 0) <= 0 ? -a : a
+}
+
+BEGIN {
+    dates[0] = ""
+}
+
+ENDFILE {
+    split(head["DATE-OBS"], a, "T")
+    date = a[1]
+    millis = time_to_millis(a[2])
+    ra  = sexagesimal_to_decimal(head["RASOLVE"])
+    dec = sexagesimal_to_decimal(head["DECSOLVE"])
+    lst = sexagesimal_to_decimal(head["LST"])
+
+    split(date, a, "-")
+    day = ((a[3] + 0) - 1)
+    day = day < 10 ? "0" day : day
+    date = a[1] "-" a[2] "-" (day "")
+    file = "/cygdrive/c/Wise40/Logs/" date "/ASCOM.RemoteServer.txt"
+
+    if (date in logs) {
+    } else {
+        logs[date] = file
+    }
+
+    if ((date, millis, "ha") in data) {
+    } else {
+        data[date, millis, "ha"] = lst - ra
+        data[date, millis, "dec" ] = dec
+    }
+}
+
+# 23:48:42.634 UT 16092,27,-1        DebugAxes        axisPrimaryMonitor:SampleAxisMovement: _currPosition(rad): 0.004765006852765 (REAL), _prevPosition(rad): 0.004765006852765 (REAL),raDelta: 0.000017269170698, haDelta: 0.000000000000000, active motors: enc: 32049, renishaw: 19478271, renishaw.Radians: 0.002546634836470
+# 23:48:42.634 UT 16092,7,-1         DebugAxes        axisSecondaryMonitor:SampleAxisMovement: _currPosition(rad): 1.151916433331430, _prevPosition(rad): 1.151916433331430, delta: 0.000000000000000, active motors: enc: 311262, renishaw: 18486963, renishaw.Radians: 0.002417028903455
+
+END {
+    #system("/bin/rm -rf results; mkdir -p results")
+    for (date in logs) {
+        ha_file = "results/" date "-ha"
+        dec_file = "results/" date "-dec"
+
+        for (d in data) {
+            split(d, x, SUBSEP)
+            d_date   = x[1]
+            d_millis = x[2]
+            d_coord  = x[3]
+
+            if (d_date == date) {
+                if (d_coord == "ha")
+                    printf("%-10d %10f\n", d_millis, data[d]) | "sort > " ha_file
+                else if (d_coord == "dec")
+                    printf("%-10d %10f\n", d_millis, data[d]) | "sort > " dec_file
+            }
+        }
+    }
+}
