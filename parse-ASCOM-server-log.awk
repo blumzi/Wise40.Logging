@@ -225,17 +225,18 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
     o = o " [" transaction[tid, "start_date"] ", " transaction[tid, "end_date"] ", " 
     o = o sprintf("%6dms", transaction[tid, "duration"]) "] "
     o = o sprintf("%-10s", "tid=" tid) " verb=" transaction[tid, "verb"] " " sprintf("driver=%-20s", transaction[tid, "driver"])
-    o = o sprintf("method=%-30s", transaction[tid, "method"])
-    if (transaction[tid, "Action"])
-        o = o sprintf("%-25s", "action=" transaction[tid, "Action"])
-    else {
-        if (transaction[tid, "nparams"]) {
-            o = o "params="
-            for (i = 0; i < transaction[tid, "nparams"]; i++) {
-                o = o transaction[tid, "param", i] ", "
-            }
+    m = "method=" transaction[tid, "method"]
+    if (transaction[tid, "nparams"]) {
+        m = m "("
+        for (i = 0; i < transaction[tid, "nparams"]; i++) {
+            m = m transaction[tid, "param", i] ", "
         }
+        sub(", $", "", m)
+        sub(", Parameters=", "", m)
+        m = m ")"
     }
+
+    o = o sprintf("%-75s", m)
 
     o = o "response=" transaction[tid, "result"] " "
 
