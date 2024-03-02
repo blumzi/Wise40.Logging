@@ -118,6 +118,12 @@ BEGIN {
     sub("\r", "")
 }
 
+#DebugActivity    Cancellation: operation: TargetRightAscension.get, cancelled with ASCOM.ValueNotSetException
+/ValueNotSetException/ {
+    next
+}
+
+
 /^##/ {
     print
     next
@@ -135,7 +141,7 @@ BEGIN {
     print_in_progress($0); next
 }
 
-/Debug(ASCOM|Logic|Tele)[[:space:]]*SlewTo(Target|Coordinates|AltAz|HaDec)Async/ {
+/Debug(ASCOM|Logic|Tele)[[:space:]]*SlewTo(Target|Coordinates|AltAz|HaDec)Async.*\)\)$/ {
     slew_number++
     slew_start = timestamp2millis($1)
     print "\n"
