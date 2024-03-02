@@ -14,7 +14,6 @@ tops=(
     /cygdrive/c/Users/${USER}/Documents/ASCOM
     /cygdrive/c/ASCOM
     /cygdrive/c/Wise40/MySQL
-    "/cygdrive/c/Program Files (x86)/Common Files/ASCOM/SystemLogs"
 )
 
 log ""
@@ -24,6 +23,15 @@ while read dir; do
     log "    Removing \"${dir}\" ..."
     /bin/rm -rf "${dir}"
 done < <( find "${tops[@]}" -maxdepth 1 -type d -name '*2???-??-??' -mtime +30 ) 
+
+tops=(
+    "/cygdrive/c/Program Files (x86)/ASCOM/SystemLogs"
+    "/cygdrive/c/Program Files (x86)/Common Files/ASCOM/SystemLogs"
+)
+while read dir; do
+    log "    Removing \"${dir}\" ..."
+    /bin/rm -rf "${dir}"
+done < <( find "${tops[@]}" -maxdepth 1 -type d -name 'Logs *2???-??-??' -mtime +30 ) 
 
 log "== Removing dump files =="
 while read dmp; do
