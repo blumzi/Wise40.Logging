@@ -1,8 +1,0 @@
-#!/bin/bash
-
-prog=$(basename ${0})
-
-for i in $(find . -name '*.head'); do
-    echo ${i} >> ${prog}.log
-    ./get-coords < ${i}
-done
