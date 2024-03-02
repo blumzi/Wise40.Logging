@@ -88,20 +88,6 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         sub("?.*", "", method)
         params = words[3]
         sub(".*[?]", "", params)
-        if (params == method) {
-            params = ""
-        } else {
-            print("params: " params)
-            n = split(params, pars, "&")
-            #print "n: " n ", pars: ===" params "==="
-            if (n > 0) {
-                for (p in pars) {
-                    if (match(pars[p], "Client.*="))
-                        continue
-                    params = params ", " pars[p]
-                }
-            }
-        }
 
         transaction[tid, "start_date"] = $1
         transaction[tid, "start"] = millis
@@ -110,7 +96,7 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         transaction[tid, "driver"] = driver
         transaction[tid, "unit"] = unit
         transaction[tid, "method"] = method
-        transaction[tid, "params"] = params
+        # transaction[tid, "params"] = params
 #        print ""
 #        print "transaction: " tid
 #        print "  start: " transaction[tid, "start"]
@@ -182,21 +168,18 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         else
             produce_line_transaction_entry(tid, 0)
     } else if ($7 == "Parameter") {
-        #print line
-        if (! transaction[tid, "nparams"])
-            transaction[tid, "nparams"] = 0
-        sub("\r", "", $7)
-        sub("\r", "", $9)
-        n = transaction[tid, "nparams"]
-        transaction[tid, "param", n] = $7"="$9
-        transaction[tid, "nparams"] = n + 1
+        if (! ($8 == "ClientID" || $10 == "ClientTransactionID")) {
+            if (! transaction[tid, "nparams"])
+                transaction[tid, "nparams"] = 0
+            n = transaction[tid, "nparams"]
+            transaction[tid, "param", n] = $8"="$10
+            transaction[tid, "nparams"] = n + 1
+        }
     } else if ($7 == "ProcessRequestAsync") {
         if (transaction[tid, "source"] == "") {
             transaction[tid, "source"] = $5
             #print " source: "  transaction[tid, "source"]
         }
-    } else if ($6 == "action" && $7 == "Action") {
-        transaction[tid, "Action"] = $9
     }
 }
 
@@ -240,9 +223,9 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
     o = ""
     o = o sprintf("%-15s", "source=" transaction[tid, "source"])
     o = o " [" transaction[tid, "start_date"] ", " transaction[tid, "end_date"] ", " 
-    o = o sprintf("%4dms", transaction[tid, "duration"]) "] "
+    o = o sprintf("%6dms", transaction[tid, "duration"]) "] "
     o = o sprintf("%-10s", "tid=" tid) " verb=" transaction[tid, "verb"] " " sprintf("driver=%-20s", transaction[tid, "driver"])
-    o = o sprintf("method=%-21s", transaction[tid, "method"])
+    o = o sprintf("method=%-30s", transaction[tid, "method"])
     if (transaction[tid, "Action"])
         o = o sprintf("%-25s", "action=" transaction[tid, "Action"])
     else {
@@ -254,7 +237,7 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
         }
     }
 
-    o = o "result=" transaction[tid, "result"] " "
+    o = o "response=" transaction[tid, "result"] " "
 
     if (transaction[tid, "json"]) {
         _j = transaction[tid, "json"]
