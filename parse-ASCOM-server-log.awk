@@ -2,6 +2,19 @@
 
 # 12:16:08.099 => millis since epoch
 function get_millis(hms, m) {
+    n = split(hms, xx, ":.")
+    switch(n) {
+        case 1:
+            hms = hms ":00:00.000"
+            break
+        case 2:
+            hms = hms ":00.000"
+            break
+        case 3:
+            hms = hms ".000"
+            break
+    }
+        
     m = hms
     sub(".*[.]", "", m)
     sub("[.].*", "", hms)
@@ -11,51 +24,86 @@ function get_millis(hms, m) {
 
 function usage() {
     print("Usage:")
-    print("  " ARGV[0] ":[--lco|--tau] [--line|--json]")
+    print("  " ARGV[0] " [-v methods=\"meth1,meth2,...\"] [-v sources=\"lco,tau\"] [-v verbs=\"PUT,GET\"] [-v period=\"from,to\"]")
 }
 
 BEGIN {
+#    if (ARGC == 1 && (ARGV[1] == "-h" || ARGV[1] == "--help")) {
+#        usage()
+#        exit()
+#    fi
+
     lco_ip = "10.11.0.8:.*"
     tau_ip = "127.0.0.1|132.66.65.9"
 
     output_mode = "line"
-    mode = "lco"
+    lco = 0
+    tau = 0
+    nMethods = 0
 
-    if (ARGC > 0) {
-        for (a = 1; a < ARGC; a++) {
-            switch (ARGV[a]) {
-                case "--lco":
-                    mode = "lco"
-                    delete ARGV[a]
-                    break
-                case "--tau":
-                    mode = "tau"
-                    delete ARGV[a]
-                    break
-                case "--json":
-                    output_mode = "json"
-                    delete ARGV[a]
-                    break
-                case "--line":
-                    output_mode = "line"
-                    delete ARGV[a]
-                    break
-                default:
-                    usage()
-                    exit 
-                    break
+    if (sources) {
+        n = split(sources, s)
+        if (n > 0) {
+            for (i in s) {
+                switch (s[i]) {
+                    case "lco":
+                        lco = 1
+                        break
+                    case "tau":
+                        tau = 1
+                        break
+                }
             }
         }
     }
 
-    print "mode: " mode ", output_mode: " output_mode
+    if (methods) {
+        nMethods = split(methods, meths, ",")
+        for (i = 1; i <= nMethods; i++) {
+            Methods[i-1] = meths[i]
+        }
+    }
 
-    if (mode == "json")
+    if (verbs) {
+        nVerbs = split(verbs, vrb, ",")
+        for (i = 0; i < nVerbs; i++) {
+            if (vrb[i] == "GET" || vrb[i] == "PUT") {
+                Verbs[i-1] = vrbs[i]
+            } else {
+                print("Bad verb \"" vrb[i] "\".  Either GET or PUT")
+                usage()
+                exit
+            }
+        }
+    }
+
+    FromTimeMillis = 0
+    ToTimeMillis = 0
+
+    if (period) {
+        # 13:13:21.958, 13:13:21.959
+        nTimes = split(period, per, ",")
+        if (nTimes > 0) {
+            FromTimeMillis = get_millis(per[1])
+            # print("FromTimeMillis: " FromTimeMillis)
+        }
+        if (nTimes > 1) {
+            ToTimeMillis = get_millis(per[2])
+            # print("ToTimeMillis: " ToTimeMillis)
+        }
+    }
+
+    if (!lco && !tau) {
+        lco = 1
+        tau = 1
+    }
+
+    if (output_mode == "json")
         print "{"
 }
 
 END {
-    if (mode == "json")
+    if (output_mode == "json")
         print "}"
 }
 
@@ -168,7 +216,7 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         else
             produce_line_transaction_entry(tid, 0)
     } else if ($7 == "Parameter") {
-        if (! ($8 == "ClientID" || $10 == "ClientTransactionID")) {
+        if (! ($8 == "ClientID" || $8 == "ClientTransactionID")) {
             if (! transaction[tid, "nparams"])
                 transaction[tid, "nparams"] = 0
             n = transaction[tid, "nparams"]
@@ -210,18 +258,49 @@ function quoted(s) {
 
 function produce_line_transaction_entry(tid, last, _out, _t, _j) {
     #print("mode: " mode ", source: " transaction[tid, "source"])
-    if (mode == "lco" && transaction[tid, "source"] !~ lco_ip) {
-        #print("not lco")
+    if (!lco && transaction[tid, "source"] ~ lco_ip) {
         return
     }
 
-    if (mode == "tau" && transaction[tid, "source"] !~ tau_ip) {
-        #print("not tau")
+    if (!tau && transaction[tid, "source"] ~ tau_ip) {
         return
+    }
+
+    if (FromTimeMillis && transaction[tid, "start"] < FromTimeMillis)
+        return
+
+    if (ToTimeMillis && transaction[tid, "end"] >= ToTimeMillis)
+        return
+
+    if (nVerbs) {
+        found = 0
+        for (i = 0; i < nVerbs; i++) {
+            if (Verbs[i] == transaction[tid, "verb"]) {
+                found = 1
+                break
+            }
+        }
+        if (!found)
+            return
+    }
+
+    if (nMethods > 0) {
+        is_included = 0
+
+        for (i = 0; i < nMethods; i++) {
+            # print("included[i]: " included[i] "method: " transaction[tid, "method"])
+            if (Methods[i] == transaction[tid, "method"]) {
+                is_included = 1
+                break
+            }
+        }
+
+        if (!is_included)
+            return
     }
 
     o = ""
-    o = o sprintf("%-15s", "source=" transaction[tid, "source"])
+    o = o sprintf("%-25s", "source=" transaction[tid, "source"])
     o = o " [" transaction[tid, "start_date"] ", " transaction[tid, "end_date"] ", " 
     o = o sprintf("%6dms", transaction[tid, "duration"]) "] "
     o = o sprintf("%-10s", "tid=" tid) " verb=" transaction[tid, "verb"] " " sprintf("driver=%-20s", transaction[tid, "driver"])
@@ -248,15 +327,18 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
             sub(".*.Value.:.", "", value)
             sub(",.*.ClientTransactionID.*", "", value)
             o = o "value=" value
-        }
-
-        if (_j ~  /.Value.:.[^{]/) {
+        } else if (_j ~  /.Value.:.[^{]/) {
             value = _j
             sub(".*.Value.:.", "", value)
             sub(",.*ClientTransactionID.*", "", value)
             gsub(/\\/, "", value)
             gsub(/\n/, "", value)
             gsub(/,      /, ", ", value)
+            o = o "value=" value
+        } else if (transaction[tid, "result"] == "Ex") {
+            value = _j
+            sub(/.*Exception.:./, "", value)
+            sub(/\n[[:space:]]*}/, "", value)
             o = o "value=" value
         }
     }
