@@ -148,4 +148,10 @@ for issue_file in *_issues.txt; do
     powershell -Command "& { Send-MailMessage -To ${tau_recipients} -From \"${mail_from}\" -Subject \"${subject}\" -Body \"Please find attached ...\" -SmtpServer \"${mail_server}\" -Attachments \"C:\Wise40\Logs\\${log_date}\\${issue_file}\" }"
 done
 log "Mailing results - done"
+
+latest=$(ls -1rt /cygdrive/c/ASCOM/Logs\ 2024-0*/ASCOM.Remote* | tail -1)
+output="$(basename "${latest}" .txt)".parsed.txt
+# TBD: this may override the latest output file
+parse-ASCOM-server-log.awk < "${latest}}" > "${output}" &
+
 log "Done."
