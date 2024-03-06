@@ -214,11 +214,24 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         # print "Exception"
     } else if ($7 == "Parameter") {
         if (! ($8 == "ClientID" || $8 == "ClientTransactionID")) {
-            if ($10 != "") {
+            param_name = ""; param_value = ""
+
+            if ($8 == "Parameters") {
+                v = $0
+                sub(/^.*Parameters = /, "", v)
+                if (v != "") {
+                    param_name = $8
+                    param_value = v
+                }
+            } else {
+                param_name = $8
+                param_value = $10
+            }
+            if (param_name && param_value) {
                 if (! transaction[tid, "nparams"])
                     transaction[tid, "nparams"] = 0
                 n = transaction[tid, "nparams"]
-                transaction[tid, "param", n] = $8"="$10
+                transaction[tid, "param", n] = param_name "=" param_value
                 transaction[tid, "nparams"] = n + 1
             }
         }
@@ -310,8 +323,6 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
     o = o sprintf("%-25s ",  "source=" transaction[tid, "source"])
     o = o sprintf("%-18s ",  "start=" transaction[tid, "start_date"])
     o = o sprintf("%-18s ",  "end=" transaction[tid, "end_date"])
-    # o = o sprintf("%-18s ",  "start_millis=" transaction[tid, "start"])
-    # o = o sprintf("%-18s ",  "end_millis=" transaction[tid, "end"])
     o = o sprintf("%-15s ",  "duration=" transaction[tid, "duration"] "ms")
     o = o sprintf("%-10s ",  "tid=" tid)
     o = o sprintf("%-5s " ,  "verb=" transaction[tid, "verb"])
@@ -324,7 +335,6 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
             m = m transaction[tid, "param", i] ", "
         }
         sub(", $", "", m)
-        sub(", Parameters=", "", m)
         m = m ")"
     }
 
