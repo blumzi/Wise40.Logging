@@ -149,9 +149,12 @@ for issue_file in *_issues.txt; do
 done
 log "Mailing results - done"
 
-latest=$(ls -1rt /cygdrive/c/ASCOM/Logs\ 2024-0*/ASCOM.Remote* | tail -1)
-output="$(basename "${latest}" .txt)".parsed.txt
+latest="$(ls -1tr /cygdrive/c/Program\ Files\ \(x86\)/ASCOM/SystemLogs/*/ASCOM.RemoteServer*| tail -1)"
+output=${log_dir}/"$(basename "${latest}" .txt)".parsed.txt
 # TBD: this may override the latest output file
+log "Started parsing ASCOM log \"${latest}\" -> \"${output}\""
+mkdir -p "$(dirname "${output}")"
 parse-ASCOM-server-log.awk < "${latest}}" > "${output}" &
+log "Done parsing ASCOM log"
 
 log "Done."

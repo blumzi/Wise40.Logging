@@ -1,25 +1,21 @@
 #!/usr/bin/gawk -f
 
 # 12:16:08.099 => millis since epoch
-function get_millis(hms, m) {
-    n = split(hms, xx, ":.")
-    switch(n) {
-        case 1:
-            hms = hms ":00:00.000"
-            break
-        case 2:
-            hms = hms ":00.000"
-            break
-        case 3:
-            hms = hms ".000"
-            break
-    }
-        
-    m = hms
-    sub(".*[.]", "", m)
-    sub("[.].*", "", hms)
-    gsub(":", " ", hms)
-    return mktime("2018 1 1 "hms) * 1000 + m
+function get_millis(hms, m, orig, hh, mm, ss, ms) {
+    orig = hms
+    hh = 0; mm = 0; ss = 0; ms = 0
+    n = split(hms, xx, "[:.]")
+    if (n > 0)
+        hh = xx[1]
+    if (n > 1)
+        mm = xx[2]
+    if (n > 2)
+        ss = xx[3]
+    if (n > 3)
+        ms = xx[4]
+
+    m = "2018 1 1 " hh " " mm " " ss
+    return mktime(m) + ms
 }
 
 function usage() {
@@ -41,6 +37,7 @@ BEGIN {
     tau = 0
     nMethods = 0
 
+    msg = "# sources: "
     if (sources) {
         n = split(sources, s)
         if (n > 0) {
@@ -53,45 +50,61 @@ BEGIN {
                         tau = 1
                         break
                 }
+                msg = msg " " s[i]
             }
         }
-    }
+    } else
+        msg = msg " any"
+    print(msg)
 
+    msg = "# methods: "
     if (methods) {
         nMethods = split(methods, meths, ",")
         for (i = 1; i <= nMethods; i++) {
             Methods[i-1] = meths[i]
+            msg = msg " " meths[i]
         }
-    }
+    } else
+        msg = msg "any"
+    print(msg)
 
+    msg = "# verbs:  "
     if (verbs) {
         nVerbs = split(verbs, vrb, ",")
         for (i = 0; i < nVerbs; i++) {
             if (vrb[i] == "GET" || vrb[i] == "PUT") {
                 Verbs[i-1] = vrbs[i]
+                msg = msg " " vrbs[i]
             } else {
                 print("Bad verb \"" vrb[i] "\".  Either GET or PUT")
                 usage()
                 exit
             }
         }
-    }
+    } else
+        msg = msg "  any"
+    print(msg)
 
     FromTimeMillis = 0
     ToTimeMillis = 0
 
+    msg = "# period:   "
     if (period) {
         # 13:13:21.958, 13:13:21.959
         nTimes = split(period, per, ",")
         if (nTimes > 0) {
             FromTimeMillis = get_millis(per[1])
             # print("FromTimeMillis: " FromTimeMillis)
+            msg = msg " from=" per[1]
         }
         if (nTimes > 1) {
             ToTimeMillis = get_millis(per[2])
             # print("ToTimeMillis: " ToTimeMillis)
+            msg = msg " to=" per[2]
         }
-    }
+    } else
+        msg = msg "any"
+    print(msg)
 
     if (!lco && !tau) {
         lco = 1
@@ -138,7 +151,7 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         sub(".*[?]", "", params)
 
         transaction[tid, "start_date"] = $1
-        transaction[tid, "start"] = millis
+        #transaction[tid, "start"] = millis
         transaction[tid, "verb"] = verb
         transaction[tid, "url"] = url
         transaction[tid, "driver"] = driver
@@ -165,10 +178,6 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         #print "transaction[" tid ", verb] = " transaction[tid, "verb"] 
     } else if ($7 == "OK") {
         transaction[tid, "result"] = "OK"
-        transaction[tid, "end_date"] = $1
-        transaction[tid, "end"] = millis
-        if (transaction[tid, "start"])
-            transaction[tid, "duration"] = millis - transaction[tid, "start"]
         json = line
         sub(".*Json: ", "", json)
         #print "json: " json
@@ -194,16 +203,8 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         gsub("@@@", ",", json)
         transaction[tid, "json"] = json
         # print "OK"
-        if (output_mode == "json")
-            produce_json_transaction_entry(tid, 0)
-        else
-            produce_line_transaction_entry(tid, 0)
     } else if ($7 == "Exception:") {
         transaction[tid, "result"] = "Ex"
-        transaction[tid, "end_date"] = $1
-        transaction[tid, "end"] = millis
-        if (transaction[tid, "start"])
-            transaction[tid, "duration"] = millis - transaction[tid, "start"]
         exception = line
         sub(".*Exception: ", "", exception)
         sub("\r", "", exception)
@@ -211,23 +212,29 @@ function parse(line, verb, unit, n, tid, url, millis, method, params, driver, pa
         sub("\r", "", msg)
         transaction[tid, "json"] = "{\n  " indent(2, quoted("Exception") ": " quoted(msg)) "\n" indent(2, "}")
         # print "Exception"
-        if (output_mode == "json")
-            produce_json_transaction_entry(tid, 0)
-        else
-            produce_line_transaction_entry(tid, 0)
     } else if ($7 == "Parameter") {
         if (! ($8 == "ClientID" || $8 == "ClientTransactionID")) {
-            if (! transaction[tid, "nparams"])
-                transaction[tid, "nparams"] = 0
-            n = transaction[tid, "nparams"]
-            transaction[tid, "param", n] = $8"="$10
-            transaction[tid, "nparams"] = n + 1
+            if ($10 != "") {
+                if (! transaction[tid, "nparams"])
+                    transaction[tid, "nparams"] = 0
+                n = transaction[tid, "nparams"]
+                transaction[tid, "param", n] = $8"="$10
+                transaction[tid, "nparams"] = n + 1
+            }
         }
-    } else if ($7 == "ProcessRequestAsync") {
+    } else if ($7 == "Header" && $8 == "Content-Length") {
         if (transaction[tid, "source"] == "") {
             transaction[tid, "source"] = $5
             #print " source: "  transaction[tid, "source"]
         }
+    } else if ($7 == "ProcessRequestAsync" && $0 ~ /Command completed for/) {
+        transaction[tid, "source"] = $5
+        transaction[tid, "end_date"] = $1
+        transaction[tid, "duration"] = get_millis(transaction[tid, "end_date"]) - get_millis(transaction[tid, "start_date"])
+        if (output_mode == "json")
+            produce_json_transaction_entry(tid, 0)
+        else
+            produce_line_transaction_entry(tid, 0)
     }
 }
 
@@ -300,10 +307,16 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
     }
 
     o = ""
-    o = o sprintf("%-25s", "source=" transaction[tid, "source"])
-    o = o " [" transaction[tid, "start_date"] ", " transaction[tid, "end_date"] ", " 
-    o = o sprintf("%6dms", transaction[tid, "duration"]) "] "
-    o = o sprintf("%-10s", "tid=" tid) " verb=" transaction[tid, "verb"] " " sprintf("driver=%-20s", transaction[tid, "driver"])
+    o = o sprintf("%-25s ",  "source=" transaction[tid, "source"])
+    o = o sprintf("%-18s ",  "start=" transaction[tid, "start_date"])
+    o = o sprintf("%-18s ",  "end=" transaction[tid, "end_date"])
+    # o = o sprintf("%-18s ",  "start_millis=" transaction[tid, "start"])
+    # o = o sprintf("%-18s ",  "end_millis=" transaction[tid, "end"])
+    o = o sprintf("%-15s ",  "duration=" transaction[tid, "duration"] "ms")
+    o = o sprintf("%-10s ",  "tid=" tid)
+    o = o sprintf("%-5s " ,  "verb=" transaction[tid, "verb"])
+    o = o sprintf("%-20s ",  "driver=" transaction[tid, "driver"])
+
     m = "method=" transaction[tid, "method"]
     if (transaction[tid, "nparams"]) {
         m = m "("
@@ -316,7 +329,6 @@ function produce_line_transaction_entry(tid, last, _out, _t, _j) {
     }
 
     o = o sprintf("%-75s", m)
-
     o = o "response=" transaction[tid, "result"] " "
 
     if (transaction[tid, "json"]) {
